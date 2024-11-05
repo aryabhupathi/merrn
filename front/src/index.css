@@ -11,3 +11,8 @@ code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
 }
+
+/* styles.css or a similar CSS file */
+body.no-scroll {
+  overflow: hidden;
+}

@@ -7,6 +7,7 @@ import FlightResults from "./Result/FlightResult";
 import { AuthProvider } from "./authContext";
 import Login from "./Login/Login";
 import Signup from "./Login/Signup";
+import ForgotPassword from "./Login/Forgot";
 
 const App = () => {
   return (
@@ -15,7 +16,7 @@ const App = () => {
         <Routes>
           <Route path="/" element={<TicketReservationForm />} />
           <Route path="/login" element={<Login />} />
-
+          <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/signup" element={<Signup />} />
           <Route path="/results/bus" element={<BusResults />} />
           <Route path="/results/train" element={<TrainsResults />} />

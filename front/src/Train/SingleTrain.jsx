@@ -1,49 +1,38 @@
 import React, { useState, useEffect } from "react";
+import { useLocation } from "react-router-dom";
 import {
   Box,
-  Grid,
-  Typography,
   Button,
-  Snackbar,
-  Dialog,
-  DialogContent,
-  DialogTitle,
-  DialogActions,
+  Typography,
   Accordion,
   AccordionSummary,
   AccordionDetails,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Snackbar,
+  Alert,
 } from "@mui/material";
-import jsPDF from "jspdf";
-import { useLocation } from "react-router-dom";
-import { train } from "../data"; // Assuming this is your train data
+import Grid from "@mui/material/Grid2";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import { useAuth } from "../authContext";
 import AddIcon from "@mui/icons-material/Add";
 import RemoveIcon from "@mui/icons-material/Remove";
-
 const SingleTrain = () => {
   const location = useLocation();
+  const { user } = useAuth();
   const { formData } = location.state;
-  const [trips, setTrips] = useState([]);
-  const [outboundPassengerCount, setOutboundPassengerCount] = useState({});
-  const [outboundReservations, setOutboundReservations] = useState([]);
-  const [outboundTotalFare, setOutboundTotalFare] = useState(0);
-  const [outboundSnackbarOpen, setOutboundSnackbarOpen] = useState(false);
-  const [successSnackbarOpen, setSuccessSnackbarOpen] = useState(false);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [showDownloadButton, setShowDownloadButton] = useState(false);
-  const [reservedCoaches, setReservedCoaches] = useState({});
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    const initialOutboundCounts = {};
-    train.forEach((train) => {
-      train.coaches.forEach((coach) => {
-        initialOutboundCounts[`${train.trainName}-${coach.coachName}`] = 0;
-      });
-    });
-    setOutboundPassengerCount(initialOutboundCounts);
-  }, []);
-
+  const [trip, setTrip] = useState([]);
+  const [error, setError] = useState("");
+  const [selectedSeats, setSelectedSeats] = useState({});
+  const [totalFare, setTotalFare] = useState(0);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [reservationDetails, setReservationDetails] = useState(null);
+  const [reservationConfirmed, setReservationConfirmed] = useState(false);
+  const [snackbarOpen, setSnackbarOpen] = useState(false);
+  const [snackbarError, setSnackbarError] = useState("");
+  const [reserveAlert, setReserveAlert] = useState(false);
   useEffect(() => {
     const fetchTrainData = async () => {
       try {
@@ -54,270 +43,175 @@ const SingleTrain = () => {
           throw new Error("Error fetching trains");
         }
         const data = await response.json();
-        setTrips(data);
+        setTrip(data);
+        const initialSeats = {};
+        data.forEach((train, trainIndex) => {
+          train.coaches.forEach((coach, coachIndex) => {
+            initialSeats[`${trainIndex}-${coachIndex}`] = 0;
+          });
+        });
+        setSelectedSeats(initialSeats);
       } catch (error) {
         setError(error.message);
       }
     };
-
     fetchTrainData();
   }, [formData.source, formData.destination]);
-
-  const incrementCount = (trainName, coachName, fare, noOfSeatsAvailable) => {
-    const currentCount =
-      outboundPassengerCount[`${trainName}-${coachName}`] || 0;
-    if (currentCount >= noOfSeatsAvailable) {
-      return; // Exit early if no more seats are available
-    }
-
-    // Update outboundPassengerCount state
-    setOutboundPassengerCount((prev) => ({
-      ...prev,
-      [`${trainName}-${coachName}`]: currentCount + 1,
-    }));
-
-    // Update total fare
-    setOutboundTotalFare((prevTotal) => prevTotal + fare);
-  };
-
-  const decrementCount = (trainName, coachName, fare) => {
-    setOutboundPassengerCount((prev) => {
-      const currentCount = prev[`${trainName}-${coachName}`] || 0;
-      if (currentCount > 0) {
-        setOutboundTotalFare((prevTotal) => prevTotal - fare); // Deduct fare only if decrementing
-        return { ...prev, [`${trainName}-${coachName}`]: currentCount - 1 };
-      }
-      return prev;
+  const handleSeatChange = (trainIndex, coachIndex, coachFare, increment) => {
+    const coachKey = `${trainIndex}-${coachIndex}`;
+    setSelectedSeats((prevState) => {
+      const newSeatsSelected = Math.max(0, prevState[coachKey] + increment);
+      const fareChange = increment * coachFare;
+      setTotalFare((prevFare) => prevFare + fareChange);
+      return {
+        ...prevState,
+        [coachKey]: newSeatsSelected,
+      };
     });
   };
-
-  // const handleReserve = async (train) => {
-  //   const newReservations = {};
-  //   const newReservedCoaches = { ...reservedCoaches };
-  
-  //   let hasUpdatedSeats = false; // To track if any coach was updated
-  
-  //   // Track updated trips
-  //   const updatedTrips = trips.map((trip) => {
-  //     if (trip.trainName === train.trainName) {
-  //       // Loop over each coach and update available seats
-  //       const updatedCoaches = trip.coaches.map(async (coach) => {
-  //         const count =
-  //           outboundPassengerCount[`${trip.trainName}-${coach.coachName}`] || 0;
-  
-  //         if (count > 0) {
-  //           const totalFareForCoach = count * coach.fare;
-  //           newReservations[`${trip.trainName}-${coach.coachName}`] = {
-  //             trainName: trip.trainName,
-  //             coachName: coach.coachName,
-  //             count,
-  //             totalFareForCoach,
-  //           };
-  //           newReservedCoaches[`${trip.trainName}-${coach.coachName}`] = true;
-  
-  //           // Calculate new available seats
-  //           const updatedSeats = coach.noOfSeatsAvailable - count;
-  
-  //           // Ensure seats do not go negative
-  //           if (updatedSeats >= 0) {
-  //             // Call API to update the seats in the database
-  //            updateSeatsInDatabase(
-  //               trip.trainName,
-  //               coach.coachName,
-  //               updatedSeats
-  //             );
-  
-  //             hasUpdatedSeats = true; // Mark as updated
-  //             return {
-  //               ...coach,
-  //               noOfSeatsAvailable: updatedSeats, // Update available seats in UI
-  //             };
-  //           }
-  //         }
-  
-  //         return coach;
-  //       });
-  
-  //       return { ...trip, coaches: updatedCoaches };
-  //     }
-  //     return trip;
-  //   });
-  
-  //   if (hasUpdatedSeats) {
-  //     setTrips(updatedTrips); // Update trips state with new available seats
-  //     setOutboundReservations((prev) => [
-  //       ...prev,
-  //       ...Object.values(newReservations),
-  //     ]);
-  //     setReservedCoaches(newReservedCoaches);
-  //     setOutboundSnackbarOpen(true);
-  //     setIsModalOpen(true);
-  
-  //     // Reset seat count after reservation
-  //     const resetCounts = { ...outboundPassengerCount };
-  //     train.coaches.forEach((coach) => {
-  //       resetCounts[`${train.trainName}-${coach.coachName}`] = 0;
-  //     });
-  //     setOutboundPassengerCount(resetCounts); // Reset seat counts
-  //   } else {
-  //     alert("Please select at least 1 passenger.");
-  //   }
-  // };
-  
-  const handleReserve = async (train) => {
-    const newReservations = {};
-    const newReservedCoaches = { ...reservedCoaches };
-  
-    let hasUpdatedSeats = false; // To track if any coach was updated
-  
-    // Track updated trips
-    const updatedTrips = await Promise.all(
-      trips.map(async (trip) => {
-        if (trip.trainName === train.trainName) {
-          // Loop over each coach and update available seats
-          const updatedCoaches = await Promise.all(
-            trip.coaches.map(async (coach) => {
-              const count =
-                outboundPassengerCount[`${trip.trainName}-${coach.coachName}`] ||
-                0;
-  
-              if (count > 0) {
-                const totalFareForCoach = count * coach.fare;
-                newReservations[`${trip.trainName}-${coach.coachName}`] = {
-                  trainName: trip.trainName,
-                  coachName: coach.coachName,
-                  count,
-                  totalFareForCoach,
-                };
-                newReservedCoaches[`${trip.trainName}-${coach.coachName}`] = true;
-  
-                // Calculate new available seats
-                const updatedSeats = coach.noOfSeatsAvailable - count;
-  
-                // Ensure seats do not go negative
-                if (updatedSeats >= 0) {
-                  // Call API to update the seats in the database
-                  await updateSeatsInDatabase(
-                    trip.trainName,
-                    coach.coachName,
-                    updatedSeats
-                  );
-  
-                  hasUpdatedSeats = true; // Mark as updated
-                  return {
-                    ...coach,
-                    noOfSeatsAvailable: updatedSeats, // Update available seats in UI
-                  };
-                }
-              }
-  
-              return coach;
-            })
-          );
-  
-          return { ...trip, coaches: updatedCoaches };
-        }
-        return trip;
-      })
-    );
-  
-    if (hasUpdatedSeats) {
-      setTrips(updatedTrips); // Update trips state with new available seats
-      setOutboundReservations((prev) => [
-        ...prev,
-        ...Object.values(newReservations),
-      ]);
-      setReservedCoaches(newReservedCoaches);
-      setOutboundSnackbarOpen(true);
-      setIsModalOpen(true);
-  
-      // Reset seat count after reservation
-      const resetCounts = { ...outboundPassengerCount };
-      train.coaches.forEach((coach) => {
-        resetCounts[`${train.trainName}-${coach.coachName}`] = 0;
-      });
-      setOutboundPassengerCount(resetCounts); // Reset seat counts
-    } else {
-      alert("Please select at least 1 passenger.");
-    }
+  const totalSeatsSelectedForTrain = (trainIndex) => {
+    return Object.keys(selectedSeats).reduce((total, key) => {
+      if (key.startsWith(`${trainIndex}-`)) {
+        total += selectedSeats[key];
+      }
+      return total;
+    }, 0);
   };
-  
-  const updateSeatsInDatabase = async (trainName, coachName, updatedSeats) => {
+  const handleReserve = (trainIndex) => {
+    if (!user) {
+      setSnackbarError("Please log in to reserve tickets.");
+      setSnackbarOpen(true);
+      return;
+    }
+    const selectedTrain = trip[trainIndex];
+    const details = selectedTrain.coaches
+      .map((coach, coachIndex) => {
+        const reservedSeats = selectedSeats[`${trainIndex}-${coachIndex}`];
+        return reservedSeats > 0
+          ? {
+              coachName: coach.coachName,
+              reservedSeats: reservedSeats,
+              fare: coach.fare,
+              total: reservedSeats * coach.fare,
+            }
+          : null;
+      })
+      .filter(Boolean);
+    if (details.length === 0) {
+      setError("Please select at least one seat before reserving.");
+      return;
+    }
+    setReservationDetails({ train: selectedTrain, details });
+  };
+  const confirmReservation = async () => {
+    const selectedTrain = reservationDetails.train;
+    const updatedCoaches = selectedTrain.coaches
+      .map((coach, coachIndex) => {
+        const reservedSeats =
+          selectedSeats[`${trip.indexOf(selectedTrain)}-${coachIndex}`];
+        return {
+          coachName: coach.coachName,
+          reservedSeats: reservedSeats > 0 ? reservedSeats : 0,
+        };
+      })
+      .filter((coach) => coach.reservedSeats > 0);
+    if (updatedCoaches.length === 0) {
+      setError("No seats to reserve.");
+      return;
+    }
     try {
       const response = await fetch(
-        `http://localhost:5000/api/train/update-trainseats`,
+        `http://localhost:5000/api/train/update-train-seats`,
         {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            trainName,
-            coachName,
-            updatedSeats,
+            trainId: selectedTrain._id,
+            updatedCoaches: updatedCoaches,
           }),
         }
       );
-
-      const result = await response.json();
-
       if (!response.ok) {
-        console.error("Failed to update seats:", result.message);
+        throw new Error("Error reserving seats");
       }
+      const result = await response.json();
+      setReserveAlert(true);
+      setTrip((prevTrip) => {
+        const updatedTrip = [...prevTrip];
+        const trainIndex = trip.indexOf(selectedTrain);
+        updatedTrip[trainIndex].coaches.forEach((coach, coachIndex) => {
+          const reservedSeats = selectedSeats[`${trainIndex}-${coachIndex}`];
+          if (reservedSeats > 0) {
+            coach.noOfSeatsAvailable -= reservedSeats;
+          }
+        });
+        return updatedTrip;
+      });
+      setSelectedSeats((prevSeats) => {
+        const updatedSeats = { ...prevSeats };
+        Object.keys(updatedSeats).forEach((key) => {
+          if (key.startsWith(`${trip.indexOf(selectedTrain)}-`)) {
+            updatedSeats[key] = 0;
+          }
+        });
+        return updatedSeats;
+      });
+      setTotalFare(0);
+      setModalOpen(false);
+      setReservationConfirmed(true);
     } catch (error) {
-      console.error("Error updating seats in database:", error);
+      setError(error.message);
     }
   };
-
-  const handleCloseSnackbar = () => {
-    setOutboundSnackbarOpen(false);
-  };
-
-  const handleConfirmBooking = () => {
-    setIsModalOpen(false);
-    setShowDownloadButton(true);
-    setSuccessSnackbarOpen(true);
-    setTimeout(() => setSuccessSnackbarOpen(false), 2000);
-    setShowDownloadButton(true);
-  };
-
-  const downloadPDF = () => {
-    const doc = new jsPDF();
-    doc.text("Reservation Details", 20, 20);
-
-    outboundReservations.forEach((reservation, index) => {
-      doc.text(`Reservation ${index + 1}`, 20, 30 + index * 20);
-      doc.text(`Train: ${reservation.trainName}`, 20, 40 + index * 20);
-      doc.text(`Coach: ${reservation.coachName}`, 20, 50 + index * 20);
-      doc.text(`Passengers: ${reservation.count}`, 20, 60 + index * 20);
-      doc.text(
-        `Total Fare: $${reservation.totalFareForCoach}`,
-        20,
-        70 + index * 20
-      );
+  const downloadReservationDetails = () => {
+    if (!reservationDetails) return;
+    const data = {
+      train: reservationDetails.train,
+      details: reservationDetails.details,
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], {
+      type: "application/json",
     });
-
-    doc.save("reservation-details.pdf");
-    resetState();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "reservation_details.json";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    setReservationConfirmed(false);
   };
-
-  const resetState = () => {
-    setOutboundPassengerCount({});
-    setOutboundReservations([]);
-    setOutboundTotalFare(0);
-    setReservedCoaches({});
+  const handleSnackbarClose = () => {
+    setSnackbarOpen(false);
+    setReserveAlert(false);
   };
-
-  const renderTrip = () => {
-    return trips.map((train, index) => (
-      <Accordion key={index}>
-        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+  const renderTrip = (trip) => {
+    return trip.map((train, trainIndex) => (
+      <Accordion key={trainIndex} sx={{ width: "100%", mb: 2 }}>
+        <AccordionSummary
+          expandIcon={<ExpandMoreIcon />}
+          aria-controls={`panel${trainIndex}-content`}
+          id={`panel${trainIndex}-header`}
+        >
           <Typography variant="h6" sx={{ color: "blue", fontWeight: "bold" }}>
             {train.trainName}
           </Typography>
+          <Typography
+            variant="h6"
+            sx={{
+              color: "green",
+              fontWeight: "light",
+              fontStyle: "italic",
+            }}
+          >
+            ({train.startTime} - {train.endTime})
+          </Typography>
         </AccordionSummary>
         <AccordionDetails>
-          <Box
+          <Grid
             sx={{
               backgroundColor: "#f9f9f9",
               border: "1px solid lightgray",
@@ -334,171 +228,199 @@ const SingleTrain = () => {
             <Typography variant="body1" sx={{ color: "orange" }}>
               Stops: {train.stops.join(", ")}
             </Typography>
-
             <Grid container spacing={2}>
-              {train.coaches.map((coach, coachIndex) => (
-                <Grid item xs={12} sm={6} md={2} key={coachIndex}>
-                  <Box
-                    sx={{
-                      backgroundColor: "#f0f4ff",
-                      padding: 2,
-                      borderRadius: "8px",
-                      height: "150px",
-                    }}
-                  >
-                    <Typography variant="h6">{coach.coachName}</Typography>
-                    <Typography>Seats: {coach.noOfSeatsAvailable}</Typography>
-                    <Typography>Fare: ${coach.fare}</Typography>
+              {train.coaches.map((coach, coachIndex) => {
+                const coachKey = `${trainIndex}-${coachIndex}`;
+                return (
+                  <Grid item size={{ xs: 12, sm: 6, md: 3 }} key={coachIndex}>
                     <Box
                       sx={{
+                        backgroundColor: "#f0f4ff",
+                        padding: { xs: 2, sm: 3 },
+                        borderRadius: "8px",
+                        height: "70%",
                         display: "flex",
+                        flexDirection: "column",
                         justifyContent: "space-between",
-                        mt: 2,
+                        boxShadow: "0 2px 8px rgba(0, 0, 0, 0.1)",
+                        border: "1px solid #ddd",
                       }}
                     >
-                      <Button
-                        onClick={() =>
-                          incrementCount(
-                            train.trainName,
-                            coach.coachName,
-                            coach.fare,
-                            coach.noOfSeatsAvailable
-                          )
-                        }
+                      <Box>
+                        <Typography
+                          variant="body1"
+                          sx={{
+                            fontSize: { xs: "0.9rem", sm: "1rem" },
+                            fontWeight: 500,
+                          }}
+                        >
+                          Coach Name: {coach.coachName}
+                        </Typography>
+                        <Typography
+                          variant="body1"
+                          sx={{
+                            fontSize: { xs: "0.9rem", sm: "1rem" },
+                            fontWeight: 500,
+                          }}
+                        >
+                          Seats Available:{" "}
+                          {coach.noOfSeatsAvailable - selectedSeats[coachKey]}
+                        </Typography>
+                        <Typography
+                          variant="body1"
+                          sx={{
+                            fontSize: { xs: "0.9rem", sm: "1rem" },
+                            fontWeight: 500,
+                          }}
+                        >
+                          Fare: ₹{coach.fare}
+                        </Typography>
+                      </Box>
+                      <Box
+                        sx={{
+                          display: "flex",
+                          justifyContent: "space-around",
+                          alignItems: "center",
+                          mt: 2,
+                        }}
                       >
-                        <AddIcon fontSize="small" />
-                      </Button>
-                      <Typography>
-                        {
-                          outboundPassengerCount[
-                            `${train.trainName}-${coach.coachName}`
-                          ]
-                        }
-                      </Typography>
-                      <Button
-                        onClick={() =>
-                          decrementCount(
-                            train.trainName,
-                            coach.coachName,
-                            coach.fare
-                          )
-                        }
-                      >
-                        <RemoveIcon fontSize="small" />
-                      </Button>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          onClick={() =>
+                            handleSeatChange(
+                              trainIndex,
+                              coachIndex,
+                              coach.fare,
+                              -1
+                            )
+                          }
+                          disabled={selectedSeats[coachKey] === 0}
+                        >
+                          <RemoveIcon fontSize="small" />
+                        </Button>
+                        <Typography sx={{ mx: 2 }}>
+                          {selectedSeats[coachKey]}
+                        </Typography>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          onClick={() =>
+                            handleSeatChange(
+                              trainIndex,
+                              coachIndex,
+                              coach.fare,
+                              1
+                            )
+                          }
+                          disabled={
+                            selectedSeats[coachKey] >= coach.noOfSeatsAvailable
+                          }
+                        >
+                          <AddIcon fontSize="small" />
+                        </Button>
+                      </Box>
                     </Box>
-                  </Box>
-                </Grid>
-              ))}
+                  </Grid>
+                );
+              })}
             </Grid>
-
-            <Typography variant="h5" sx={{ textAlign: "center", mt: 4 }}>
-              Total Fare: ${outboundTotalFare}
-            </Typography>
-
-            <Box sx={{ textAlign: "center", mt: 4 }}>
-              {!showDownloadButton ? (
+            {totalSeatsSelectedForTrain(trainIndex) > 0 &&
+              !reservationConfirmed && (
                 <Button
                   variant="contained"
                   color="primary"
-                  onClick={() => handleReserve(train)}
-                  disabled={
-                    reservedCoaches[`${train.trainName}-${train.coachName}`]
-                  }
+                  onClick={() => handleReserve(trainIndex)}
+                  sx={{ mt: 2 }}
                 >
-                  Reserve Seats
-                </Button>
-              ) : (
-                <Button
-                  variant="contained"
-                  color="primary"
-                  onClick={() => downloadPDF()}
-                  disabled={
-                    reservedCoaches[`${train.trainName}-${train.coachName}`]
-                  }
-                >
-                  Download
+                  Reserve
                 </Button>
               )}
-            </Box>
-          </Box>
+            {reservationConfirmed && (
+              <Button
+                variant="contained"
+                color="secondary"
+                onClick={downloadReservationDetails}
+                sx={{ mt: 2 }}
+              >
+                Download Reservation Details
+              </Button>
+            )}
+          </Grid>
         </AccordionDetails>
       </Accordion>
     ));
   };
-
   return (
-    <Box
-      sx={{
-        backgroundImage:
-          "url(../../train.jpg)" /* Replace with your image path */,
-        backgroundSize: "cover" /* Ensure the image covers the entire area */,
-        backgroundRepeat: "no-repeat" /* Prevent repeating the image */,
-        backgroundPosition: "center" /* Center the image */,
-        backgroundAttachment: "fixed" /* Make the background fixed */,
-        minHeight:
-          "100vh" /* Ensure the container is at least the height of the viewport */,
-      }}
-    >
-      <Typography
-        variant="h5"
-        sx={{
-          background:
-            "linear-gradient(to right, violet, indigo, blue, green, yellow, orange, red)",
-          WebkitBackgroundClip: "text",
-          WebkitTextFillColor: "transparent",
-          textAlign: "center",
-          margin: 0,
-          paddingTop: 2,
-        }}
-      >
-        Available Trains from {formData.source} to {formData.destination}
+    <Grid container spacing={2}>
+      <Typography variant="h5" gutterBottom>
+        Train List:
       </Typography>
-      <Box>
-        {renderTrip()}
-
-        <Snackbar
-          open={outboundSnackbarOpen}
-          autoHideDuration={3000}
-          onClose={handleCloseSnackbar}
-          message="Tickets reserved successfully!"
-        />
-        <Snackbar
-          open={successSnackbarOpen}
-          message="Booking confirmed successfully!"
-          autoHideDuration={2000}
-        />
-        {error && <Snackbar
-          open={successSnackbarOpen}
-          message="aagu voi"
-          autoHideDuration={2000}
-        />}
-        <Dialog open={isModalOpen} onClose={() => setIsModalOpen(false)}>
-          <DialogTitle>Confirm Outbound Booking</DialogTitle>
-          <DialogContent>
-            {outboundReservations.length > 0 ? (
-              outboundReservations.map((reservation, index) => (
-                <Box key={index} sx={{ mb: 2 }}>
-                  <Typography variant="h6">{reservation.trainName}</Typography>
-                  <Typography>Coach: {reservation.coachName}</Typography>
-                  <Typography>Passengers: {reservation.count}</Typography>
-                  <Typography>
-                    Total Fare: ${reservation.totalFareForCoach}
-                  </Typography>
-                </Box>
-              ))
-            ) : (
-              <Typography>No reservations found.</Typography>
-            )}
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setIsModalOpen(false)}>Cancel</Button>
-            <Button onClick={handleConfirmBooking}>Confirm</Button>
-          </DialogActions>
-        </Dialog>
-      </Box>
-    </Box>
+      {trip.length > 0 ? (
+        renderTrip(trip)
+      ) : (
+        <Typography>No trains found.</Typography>
+      )}
+      <Snackbar
+        open={reserveAlert}
+        autoHideDuration={2000}
+        onClose={handleSnackbarClose}
+        anchorOrigin={{ vertical: "top", horizontal: "right" }}
+      >
+        <Alert onClose={handleSnackbarClose} severity="success">
+          Reservation successful!
+        </Alert>
+      </Snackbar>{" "}
+      <Snackbar
+        open={snackbarOpen}
+        autoHideDuration={3000}
+        onClose={handleSnackbarClose}
+        anchorOrigin={{ vertical: "top", horizontal: "right" }}
+      >
+        <Alert onClose={handleSnackbarClose} severity="error">
+          {snackbarError}
+        </Alert>
+      </Snackbar>
+      <Dialog open={modalOpen} onClose={() => setModalOpen(false)}>
+        <DialogTitle>Confirm Reservation</DialogTitle>
+        <DialogContent>
+          {reservationDetails ? (
+            <>
+              <Typography variant="h6">
+                {reservationDetails.train.trainName}
+              </Typography>
+              <Typography>Source: {reservationDetails.train.source}</Typography>
+              <Typography>
+                Destination: {reservationDetails.train.destination}
+              </Typography>
+              <Typography>Selected Coaches:</Typography>
+              {reservationDetails.details.map((detail, index) => (
+                <Typography key={index}>
+                  {detail.coachName}: {detail.reservedSeats} seats (Total: ₹
+                  {detail.total})
+                </Typography>
+              ))}
+            </>
+          ) : (
+            <Typography>Loading...</Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setModalOpen(false)} color="primary">
+            Cancel
+          </Button>
+          <Button onClick={confirmReservation} color="primary">
+            Confirm
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Snackbar
+        open={snackbarOpen}
+        autoHideDuration={2000}
+        onClose={handleSnackbarClose}
+        message="Reservation successful!"
+      />
+    </Grid>
   );
 };
-
 export default SingleTrain;

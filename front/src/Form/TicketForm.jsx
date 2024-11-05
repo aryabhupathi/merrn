@@ -5,7 +5,6 @@ import {
   Tab,
   TextField,
   Button,
-  Grid,
   Snackbar,
   Alert,
 } from "@mui/material";
@@ -18,7 +17,7 @@ import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import { IoSwapVerticalOutline } from "react-icons/io5";
 import { RiSwapBoxFill } from "react-icons/ri";
 import Layout from "../Layout";
-
+import Grid from "@mui/material/Grid2";
 const TicketReservationForm = () => {
   const [formData, setFormData] = useState({
     transportType: "bus",
@@ -34,8 +33,6 @@ const TicketReservationForm = () => {
     severity: "error",
   });
   const navigate = useNavigate();
-  // eslint-disable-next-line
-
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData({
@@ -43,14 +40,12 @@ const TicketReservationForm = () => {
       [name]: value,
     });
   };
-
   const handleTransportChange = (event, newValue) => {
     setFormData({
       ...formData,
       transportType: newValue,
     });
   };
-
   const handleTripTypeChange = (event, newValue) => {
     setFormData({
       ...formData,
@@ -58,7 +53,6 @@ const TicketReservationForm = () => {
       returnDate: "",
     });
   };
-
   const handleReverse = () => {
     setFormData((prev) => ({
       ...prev,
@@ -66,11 +60,8 @@ const TicketReservationForm = () => {
       destination: prev.source,
     }));
   };
-
   const handleSubmit = (e) => {
     e.preventDefault();
-
-    // Validate form data
     if (
       !formData.source ||
       !formData.destination ||
@@ -84,12 +75,10 @@ const TicketReservationForm = () => {
       });
       return;
     }
-
     const currentDate = new Date();
     const departureDate = new Date(formData.departureDate);
     const returnDate =
       formData.tripType === "round" ? new Date(formData.returnDate) : null;
-
     if (departureDate < currentDate.setHours(0, 0, 0, 0)) {
       setSnackbar({
         open: true,
@@ -98,7 +87,6 @@ const TicketReservationForm = () => {
       });
       return;
     }
-
     if (formData.tripType === "round" && returnDate <= departureDate) {
       setSnackbar({
         open: true,
@@ -107,10 +95,7 @@ const TicketReservationForm = () => {
       });
       return;
     }
-
     console.log("Form data submitted:", formData);
-
-    // Navigate to the results page based on transport type
     if (formData.transportType === "bus") {
       navigate("/results/bus", { state: { formData } });
     } else if (formData.transportType === "train") {
@@ -119,13 +104,10 @@ const TicketReservationForm = () => {
       navigate("/results/flight", { state: { formData } });
     }
   };
-
   const handleSnackbarClose = () => {
     setSnackbar({ ...snackbar, open: false });
   };
-
   const today = new Date().toISOString().split("T")[0];
-
   return (
     <Layout>
       <Grid
@@ -133,13 +115,14 @@ const TicketReservationForm = () => {
         justifyContent="center"
         alignItems="center"
         sx={{
-          height: "100vh",
+          height: "86vh",
           position: "relative",
-          backgroundImage: "url(../../home.webp)", // Reference to your image in the public folder
+          backgroundImage: "url(../../home.webp)",
           backgroundSize: "cover",
           backgroundRepeat: "no-repeat",
           backgroundPosition: "center",
         }}
+        mt={1}
       >
         <Box
           sx={{
@@ -167,9 +150,7 @@ const TicketReservationForm = () => {
           >
             Online Ticket Reservation
           </Typography>
-
           <form onSubmit={handleSubmit}>
-            {/* Transport Type Tabs */}
             <Tabs
               value={formData.transportType}
               onChange={handleTransportChange}
@@ -227,8 +208,6 @@ const TicketReservationForm = () => {
                 value="flight"
               />
             </Tabs>
-
-            {/* Trip Type Tabs */}
             <Tabs
               value={formData.tripType}
               onChange={handleTripTypeChange}
@@ -268,10 +247,8 @@ const TicketReservationForm = () => {
                 value="round"
               />
             </Tabs>
-
-            {/* Source and Destination with Reverse Button */}
             <Grid container spacing={2} alignItems="center">
-              <Grid item xs={12} sm={5}>
+              <Grid item size={{ xs: 12, sm: 5 }}>
                 <TextField
                   fullWidth
                   label="Source"
@@ -282,12 +259,12 @@ const TicketReservationForm = () => {
                   required
                 />
               </Grid>
-              <Grid item xs={12} sm={2} textAlign="center">
+              <Grid item size={{ xs: 12, sm: 2 }} textAlign="center">
                 <Button variant="contained" onClick={handleReverse} fullWidth>
                   <RiSwapBoxFill />
                 </Button>
               </Grid>
-              <Grid item xs={12} sm={5}>
+              <Grid item size={{ xs: 12, sm: 5 }}>
                 <TextField
                   fullWidth
                   label="Destination"
@@ -299,47 +276,105 @@ const TicketReservationForm = () => {
                 />
               </Grid>
             </Grid>
-
-            {/* Dates (Departure and Return on Single Line) */}
-            <Grid container spacing={2} sx={{ mt: 2, mb: 2 }}>
-              <Grid item xs={formData.tripType === "round" ? 6 : 12}>
-                <TextField
-                  fullWidth
-                  type="date"
-                  label="Departure Date"
-                  name="departureDate"
-                  value={formData.departureDate}
-                  onChange={handleChange}
-                  InputLabelProps={{ shrink: true }}
-                  required
-                  inputProps={{ min: today }}
-                />
-              </Grid>
-
-              {formData.tripType === "round" && (
-                <Grid item xs={6}>
+            
+              {/* {formData.tripType === "round" ? (
+                <Grid container spacing={2} sx={{ mt: 2, mb: 2 }}>
+                  <Grid item xs={6}>
+                    <TextField
+                      fullWidth
+                      type="date"
+                      label="Departure Date"
+                      name="departureDate"
+                      value={formData.departureDate}
+                      onChange={handleChange}
+                      InputLabelProps={{ shrink: true }}
+                      required
+                      inputProps={{ min: formData.departureDate || today }}
+                    />
+                  </Grid>
+                  <Grid item xs={6}>
+                    <TextField
+                      fullWidth
+                      type="date"
+                      label="Return Date"
+                      name="returnDate"
+                      value={formData.returnDate}
+                      onChange={handleChange}
+                      InputLabelProps={{ shrink: true }}
+                      required
+                      inputProps={{ min: formData.departureDate || today }}
+                    />
+                  </Grid>
+                </Grid>
+              ) : (
+                <Grid item xs={12}>
                   <TextField
                     fullWidth
                     type="date"
-                    label="Return Date"
-                    name="returnDate"
-                    value={formData.returnDate}
+                    label="Departure Date"
+                    name="departureDate"
+                    value={formData.departureDate}
                     onChange={handleChange}
                     InputLabelProps={{ shrink: true }}
                     required
                     inputProps={{ min: formData.departureDate || today }}
                   />
                 </Grid>
-              )}
-            </Grid>
+              )} */}
+              {formData.tripType === "round" ? (
+  <Grid container spacing={2} sx={{ mt: 2, mb: 2 }}>
+    <Grid item size={{xs:12, sm:6}}>
+      <TextField
+        fullWidth
+        type="date"
+        label="Departure Date"
+        name="departureDate"
+        value={formData.departureDate}
+        onChange={handleChange}
+        InputLabelProps={{ shrink: true }}
+        required
+        inputProps={{ min: today }} // Ensure minimum date is today
+        sx={{ mt: 1 }} // Add margin for consistency
+      />
+    </Grid>
+    <Grid item size={{xs:12, sm:6}}>
+      <TextField
+        fullWidth
+        type="date"
+        label="Return Date"
+        name="returnDate"
+        value={formData.returnDate}
+        onChange={handleChange}
+        InputLabelProps={{ shrink: true }}
+        required
+        inputProps={{ min: formData.departureDate || today }} // Ensure minimum date is after departure
+        sx={{ mt: 1 }} // Add margin for consistency
+      />
+    </Grid>
+  </Grid>
+) : (
+  <Grid container sx={{ mt: 2, mb: 2 }}>
+    <Grid item size={{xs:12}}>
+      <TextField
+        fullWidth
+        type="date"
+        label="Departure Date"
+        name="departureDate"
+        value={formData.departureDate}
+        onChange={handleChange}
+        InputLabelProps={{ shrink: true }}
+        required
+        inputProps={{ min: today }} // Ensure minimum date is today
+        sx={{ mt: 1 }} // Add margin for consistency
+      />
+    </Grid>
+  </Grid>
+)}
 
-            {/* Submit Button */}
             <Button variant="contained" color="primary" type="submit" fullWidth>
               Search
             </Button>
           </form>
-
-          {/* Snackbar for error messages */}
           <Snackbar
             open={snackbar.open}
             autoHideDuration={2000}
@@ -358,5 +393,4 @@ const TicketReservationForm = () => {
     </Layout>
   );
 };
-
 export default TicketReservationForm;

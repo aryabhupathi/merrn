@@ -10,16 +10,20 @@ import {
   Snackbar,
   Alert,
 } from "@mui/material";
+import jsPDF from "jspdf";
+import "jspdf-autotable";
+import { useAuth } from "../authContext";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import { useLocation } from "react-router-dom";
-import jsPDF from "jspdf";
 const RoundBus = () => {
   const location = useLocation();
+  const { user } = useAuth();
   const { formData } = location.state;
   const [selectedSeats, setSelectedSeats] = useState({
     outbound: {},
     return: {},
   });
+  const [loginAlert, setLoginAlert] = useState(false);
   const [fare, setFare] = useState({ outbound: 0, return: 0 });
   const [openConfirmModal, setOpenConfirmModal] = useState(false);
   const [selectedBus, setSelectedBus] = useState({
@@ -30,105 +34,64 @@ const RoundBus = () => {
     outbound: false,
     return: false,
   });
-  const [showmessage, setshowMessage] = useState('')
+  const [showMessage, setShowMessage] = useState(false);
   const [bookingConfirmed, setBookingConfirmed] = useState({
     outbound: false,
     return: false,
   });
   const [currentTripType, setCurrentTripType] = useState("");
-  const [showMessage, setShowMessage] = useState(false);
   const [outboundTrip, setOutboundTrip] = useState([]);
   const [returnTrip, setReturnTrip] = useState([]);
   const [error, setError] = useState(null);
 
+  const handleClose = () => setShowMessage(false);
+
   useEffect(() => {
-    const fetchStartTripData = async () => {
+    const fetchBusData = async (source, destination, setTrip) => {
       try {
         const response = await fetch(
-          `http://localhost:5000/api/bus/search?source=${formData.source}&destination=${formData.destination}`
+          `http://localhost:5000/api/bus/search?source=${source}&destination=${destination}`
         );
-        if (!response.ok) {
-          throw new Error("Error fetching buses");
-        }
+        if (!response.ok) throw new Error("Error fetching buses");
         const data = await response.json();
-        setOutboundTrip(data);
+        setTrip(
+          data.map((bus) => ({ ...bus, bookedSeats: bus.bookedSeats || [] }))
+        );
       } catch (error) {
         setError(error.message);
-        console.error("Fetch Error: ", error);
+        console.error("Fetch Error:", error);
       }
     };
 
-    fetchStartTripData();
+    fetchBusData(formData.source, formData.destination, setOutboundTrip);
+    fetchBusData(formData.destination, formData.source, setReturnTrip);
   }, [formData.source, formData.destination]);
-
-  // Fetch data for the return trip
-  useEffect(() => {
-    const fetchReturnTripData = async () => {
-      try {
-        const response = await fetch(
-          `http://localhost:5000/api/bus/search?source=${formData.destination}&destination=${formData.source}`
-        );
-        if (!response.ok) {
-          throw new Error("Error fetching return buses");
-        }
-        const data = await response.json();
-        setReturnTrip(data);
-      } catch (error) {
-        setError(error.message);
-        console.error("Fetch Error: ", error);
-      }
-    };
-
-    fetchReturnTripData();
-  }, [formData.source, formData.destination]);
-
-  
-  const handleClose = () => setshowMessage(false);
 
   const handleSeatClick = (seat, tripType) => {
     const selectedBusForTrip = selectedBus[tripType];
-  
-    if (!selectedBusForTrip || bookingConfirmed[tripType]) return;
-  
-    // Ensure the bus has available seats before selecting
+    if (
+      !selectedBusForTrip ||
+      bookingConfirmed[tripType] ||
+      selectedBusForTrip.bookedSeats.includes(seat)
+    )
+      return;
+
     if (selectedBusForTrip.noOfSeatsAvailable <= 0) return;
-  
+
     setSelectedSeats((prevSelectedSeats) => {
-      const currentBusSeats = prevSelectedSeats[tripType][selectedBusForTrip.busName] || [];
+      const currentBusSeats =
+        prevSelectedSeats[tripType][selectedBusForTrip.busName] || [];
       const isSelected = currentBusSeats.includes(seat);
-      
-      // If seat is already selected, deselect it
-      let updatedSeats;
-      if (isSelected) {
-        updatedSeats = currentBusSeats.filter((s) => s !== seat);
-      } else {
-        updatedSeats = [...currentBusSeats, seat];
-      }
-  
-      // Update fare based on the number of selected seats
+      const updatedSeats = isSelected
+        ? currentBusSeats.filter((s) => s !== seat)
+        : [...currentBusSeats, seat];
       const updatedFare = updatedSeats.length * selectedBusForTrip.fare;
-  
-      // Update state for selected seats and available seats
+
       setFare((prevFare) => ({
         ...prevFare,
         [tripType]: updatedFare,
       }));
-  
-      setSelectedBus((prevSelectedBus) => {
-        const updatedBus = {
-          ...prevSelectedBus,
-          [tripType]: {
-            ...prevSelectedBus[tripType],
-            noOfSeatsAvailable: isSelected
-              ? prevSelectedBus[tripType].noOfSeatsAvailable + 1 // Add seat back if deselected
-              : prevSelectedBus[tripType].noOfSeatsAvailable - 1, // Decrease seat if selected
-          },
-        };
-  
-        console.log(updatedBus, 'uuuuuuuuuuuuuuuuuuuuuuuuuuu');
-        return updatedBus;
-      });
-  
+
       return {
         ...prevSelectedSeats,
         [tripType]: {
@@ -138,7 +101,7 @@ const RoundBus = () => {
       };
     });
   };
-  
+
   const handleBusSelect = (bus, tripType) => {
     setSelectedBus((prev) => ({
       ...prev,
@@ -147,45 +110,150 @@ const RoundBus = () => {
 
     setSelectedSeats((prevSelectedSeats) => ({
       ...prevSelectedSeats,
-      [tripType]: { [bus.busName]: [] }, // Reset selected seats for the new bus
+      [tripType]: { [bus.busName]: [] },
     }));
 
     setFare((prevFare) => ({
       ...prevFare,
-      [tripType]: 0, // Reset fare when changing bus
+      [tripType]: 0,
     }));
 
     setBookingConfirmed((prev) => ({
       ...prev,
-      [tripType]: false, // Reset booking confirmation state
+      [tripType]: false,
     }));
   };
 
   const handleBookSeats = (tripType) => {
-    setCurrentTripType(tripType); // Set the current trip type for confirmation
-    setOpenConfirmModal(true); // Open the confirmation modal
+    if (user) {
+      setCurrentTripType(tripType);
+      setOpenConfirmModal(true);
+    } else {
+      setLoginAlert(true);
+    }
   };
 
-  const confirmBooking = () => {
-    setBookingConfirmed((prev) => ({
-      ...prev,
-      [currentTripType]: true, // Set the current trip type booking as confirmed
+  const confirmBooking = async () => {
+    const bookedSeatsOutbound =
+      selectedSeats.outbound[selectedBus.outbound?.busName] || [];
+    const bookedSeatsReturn =
+      selectedSeats.return[selectedBus.return?.busName] || [];
+
+    const updateSeatCount = async (bus, bookedSeats) => {
+      const updatedSeatsCount = bus.noOfSeatsAvailable - bookedSeats.length;
+      await updateSeatsInDatabase(bus._id, updatedSeatsCount, bookedSeats);
+      return updatedSeatsCount;
+    };
+
+    if (selectedBus.outbound) {
+      const updatedSeatsCountOutbound = await updateSeatCount(
+        selectedBus.outbound,
+        bookedSeatsOutbound
+      );
+      setOutboundTrip((prevTrips) =>
+        prevTrips.map((bus) =>
+          bus._id === selectedBus.outbound._id
+            ? {
+                ...bus,
+                noOfSeatsAvailable: updatedSeatsCountOutbound,
+                bookedSeats: [
+                  ...(bus.bookedSeats || []),
+                  ...bookedSeatsOutbound,
+                ],
+              }
+            : bus
+        )
+      );
+    }
+
+    if (selectedBus.return) {
+      const updatedSeatsCountReturn = await updateSeatCount(
+        selectedBus.return,
+        bookedSeatsReturn
+      );
+      setReturnTrip((prevTrips) =>
+        prevTrips.map((bus) =>
+          bus._id === selectedBus.return._id
+            ? {
+                ...bus,
+                noOfSeatsAvailable: updatedSeatsCountReturn,
+                bookedSeats: [...(bus.bookedSeats || []), ...bookedSeatsReturn],
+              }
+            : bus
+        )
+      );
+    }
+
+    setBookingConfirmed({ outbound: true, return: true });
+    setOpenConfirmModal(false);
+    setTimeout(() => setShowMessage(true), 2000);
+  };
+
+  const updateSeatsInDatabase = async (busId, updatedSeats, seatNo) => {
+    try {
+      const response = await fetch(
+        `http://localhost:5000/api/bus/update-bus-seats`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            busId,
+            updatedSeats,
+            seatNo,
+          }),
+        }
+      );
+      const result = await response.json();
+      if (!response.ok) {
+        console.error("Failed to update seats:", result.message);
+      }
+    } catch (error) {
+      console.error("Error updating seats in database:", error);
+    }
+  };
+
+  const handleChange = (busIndex, tripType) => {
+    const isCurrentlyExpanded = expandedIndex[tripType] === busIndex;
+
+    setExpandedIndex((prevExpandedIndex) => ({
+      ...prevExpandedIndex,
+      [tripType]: isCurrentlyExpanded ? false : busIndex,
     }));
-    setOpenConfirmModal(false); // Close confirmation modal
-    setTimeout(() => {
-      setShowMessage(true);
-    }, 2000);
+
+    if (!isCurrentlyExpanded) {
+      const selectedBusDetails =
+        tripType === "outbound" ? outboundTrip[busIndex] : returnTrip[busIndex];
+      handleBusSelect(selectedBusDetails, tripType);
+    } else {
+      setSelectedBus((prev) => ({
+        ...prev,
+        [tripType]: null,
+      }));
+      setSelectedSeats((prevSelectedSeats) => ({
+        ...prevSelectedSeats,
+        [tripType]: {},
+      }));
+      setFare((prevFare) => ({
+        ...prevFare,
+        [tripType]: 0,
+      }));
+      setBookingConfirmed((prev) => ({
+        ...prev,
+        [tripType]: false,
+      }));
+    }
   };
 
-  const downloadPDF = (tripType) => {
+  const downloadPDF = () => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
     const margin = 20;
 
-    // Header
     doc.setFontSize(22);
-    doc.text("Reservation Details", margin, margin);
+    doc.text("Bus Reservation Details", margin, margin);
     doc.setFontSize(12);
     doc.text(
       `Date: ${new Date().toLocaleDateString()}`,
@@ -193,104 +261,116 @@ const RoundBus = () => {
       margin
     );
 
-    // Table header
-    const headerY = 40;
-    doc.setFontSize(12);
-    const headers = ["Bus Name", "Route", "Seats", "Fare"];
-    const columnWidths = [60, 80, 50, 30];
+    doc.setFontSize(14);
+    doc.text(`User Name: ${user.name}`, margin, margin + 20);
+    doc.text(`From: ${formData.source}`, margin, margin + 30);
+    doc.text(`To: ${formData.destination}`, margin, margin + 40);
 
-    // Draw header row
-    headers.forEach((header, index) => {
-      doc.text(
-        header,
-        margin + columnWidths.slice(0, index).reduce((a, b) => a + b, 0),
-        headerY
-      );
+    // Outbound Trip
+    doc.setFontSize(16);
+    doc.text("Outbound Trip", margin, margin + 60);
+
+    const outboundHeaders = [
+      "Bus Name",
+      "Route",
+      "Start Time",
+      "Seats",
+      "Fare",
+    ];
+    const outboundTableRows = Object.keys(selectedSeats.outbound || {}).reduce(
+      (rows, busId) => {
+        const seats = selectedSeats.outbound[busId] || [];
+        if (seats.length > 0) {
+          const selectedBusDetails = outboundTrip.find(
+            (bus) => bus._id === busId
+          );
+          console.log(selectedBusDetails, "ooooooooooooooo");
+          if (selectedBusDetails) {
+            const fare = selectedBusDetails.fare * seats.length;
+            rows.push([
+              selectedBusDetails.busName,
+              `${selectedBusDetails.source} to ${selectedBusDetails.destination}`,
+              selectedBusDetails.startTime,
+              seats.join(", "),
+              `$${fare}`,
+            ]);
+          }
+        }
+        return rows;
+      },
+      []
+    );
+
+    doc.autoTable({
+      head: [outboundHeaders],
+      body: outboundTableRows,
+      startY: 80,
+      theme: "grid",
+      styles: { halign: "center" },
+      columnStyles: {
+        0: { cellWidth: 40 },
+        1: { cellWidth: 60 },
+        2: { cellWidth: 40 },
+        3: { cellWidth: 30 },
+        4: { cellWidth: 20 },
+      },
     });
 
-    // Data rows
-    let y = headerY + 10;
+    // Move down for the return trip section
+    const outboundEndY = doc.lastAutoTable.finalY + margin;
 
-    const selectedSeatsForTrip = selectedSeats[tripType];
-    const selectedBusDetails = selectedBus[tripType];
+    // Return Trip
+    doc.setFontSize(16);
+    doc.text("Return Trip", margin, outboundEndY + 20);
 
-    if (selectedSeatsForTrip[selectedBusDetails.busName]?.length > 0) {
-      const seats = selectedSeatsForTrip[selectedBusDetails.busName];
-      const fare = selectedBusDetails.fare * seats.length;
-
-      // Aligning data in rows
-      doc.text(selectedBusDetails.busName, margin, y);
-      doc.text(
-        `${selectedBusDetails.source} to ${selectedBusDetails.destination}`,
-        margin + columnWidths[0],
-        y
-      );
-      doc.text(seats.join(", "), margin + columnWidths[0] + columnWidths[1], y);
-      doc.text(
-        `$${fare}`,
-        margin + columnWidths[0] + columnWidths[1] + columnWidths[2],
-        y
-      );
-
-      y += 10;
-
-      // Add page break if necessary
-      if (y > pageHeight - margin) {
-        doc.addPage();
-        y = headerY + 10; // Reset y for new page
-        // Reprint the header on the new page
-        headers.forEach((header, index) => {
-          doc.text(
-            header,
-            margin + columnWidths.slice(0, index).reduce((a, b) => a + b, 0),
-            headerY
+    const returnHeaders = ["Bus Name", "Route", "Start Time", "Seats", "Fare"];
+    const returnTableRows = Object.keys(selectedSeats.return || {}).reduce(
+      (rows, busId) => {
+        const seats = selectedSeats.return[busId] || [];
+        if (seats.length > 0) {
+          const selectedBusDetails = returnTrip.find(
+            (bus) => bus._id === busId
           );
-        });
-      }
-    }
+          console.log(selectedBusDetails, "rrrrrrrrrrrrrrr");
+          if (selectedBusDetails) {
+            const fare = selectedBusDetails.fare * seats.length;
+            rows.push([
+              selectedBusDetails.busName,
+              `${selectedBusDetails.source} to ${selectedBusDetails.destination}`,
+              selectedBusDetails.startTime,
+              seats.join(", "),
+              `$${fare}`,
+            ]);
+          }
+        }
+        return rows;
+      },
+      []
+    );
+
+    doc.autoTable({
+      head: [returnHeaders],
+      body: returnTableRows,
+      startY: outboundEndY + 30,
+      theme: "grid",
+      styles: { halign: "center" },
+      columnStyles: {
+        0: { cellWidth: 40 },
+        1: { cellWidth: 60 },
+        2: { cellWidth: 40 },
+        3: { cellWidth: 30 },
+        4: { cellWidth: 20 },
+      },
+    });
 
     // Footer
+    const footerText =
+      "Thank you for your reservation! We look forward to serving you.";
     doc.setFontSize(10);
-    doc.text("Thank you for your reservation!", margin, pageHeight - margin);
+    doc.text(footerText, margin, pageHeight - margin);
 
     // Save the PDF
-    doc.save("reservation-details.pdf");
-  };
-
-  const handleChange = (busIndex, tripType) => {
-    // Check if the clicked bus is already expanded
-    const isCurrentlyExpanded = expandedIndex[tripType] === busIndex;
-
-    // Collapse if already expanded
-    setExpandedIndex((prevExpandedIndex) => ({
-      ...prevExpandedIndex,
-      [tripType]: isCurrentlyExpanded ? false : busIndex, // Set to false to collapse
-    }));
-
-    // If not currently expanded, select the bus
-    if (!isCurrentlyExpanded) {
-      const selectedBusDetails =
-        tripType === "outbound" ? outboundTrip[busIndex] : returnTrip[busIndex];
-      handleBusSelect(selectedBusDetails, tripType);
-    } else {
-      // If it is currently expanded, clear the selection
-      setSelectedBus((prev) => ({
-        ...prev,
-        [tripType]: null, // Clear selected bus
-      }));
-      setSelectedSeats((prevSelectedSeats) => ({
-        ...prevSelectedSeats,
-        [tripType]: {}, // Reset selected seats
-      }));
-      setFare((prevFare) => ({
-        ...prevFare,
-        [tripType]: 0, // Reset fare when collapsing
-      }));
-      setBookingConfirmed((prev) => ({
-        ...prev,
-        [tripType]: false, // Reset booking confirmation state
-      }));
-    }
+    doc.save("bus-reservation-details.pdf");
   };
 
   return (
@@ -356,11 +436,11 @@ const RoundBus = () => {
                 <AccordionDetails>
                   <Box
                     sx={{
-                      border: "1px solid lightgray", // Set border color
-                      borderRadius: "4px", // Rounded corners
-                      padding: 2, // Padding inside the box
-                      mb: 2, // Margin bottom for spacing
-                      backgroundColor: "#f9f9f9", // Light background color
+                      border: "1px solid lightgray",
+                      borderRadius: "4px",
+                      padding: 2,
+                      mb: 2,
+                      backgroundColor: "#f9f9f9",
                     }}
                   >
                     <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
@@ -386,87 +466,66 @@ const RoundBus = () => {
                         "None"}
                     </Typography>
                     <Box display="flex" flexDirection="column" mt={2}>
-                      {[0, 1, 2, 3].map((seatRow) => (
+                      {["A", "B", "C", "D"].map((rowLetter, rowIndex) => (
                         <Box
-                          key={seatRow}
+                          key={rowLetter}
                           display="flex"
                           flexDirection="row"
                           justifyContent="space-around"
                           mb={1}
+                          mx={1}
                         >
-                          {bus.layout.seatConfiguration.map((row, rowIndex) => (
-                            <Box
-                              key={rowIndex}
-                              bgcolor={
+                          {bus.layout.seatConfiguration.map(
+                            (column, colIndex) => {
+                              const seatNumber = `${colIndex + 1}${rowLetter}`;
+
+                              const isBooked =
+                                bus.bookedSeats.includes(seatNumber);
+                              const isSelected =
                                 selectedSeats.outbound[bus.busName]?.includes(
-                                  row[seatRow]
-                                )
-                                  ? "lightgreen"
-                                  : "lightgray"
-                              }
-                              textAlign="center"
-                              width="50px"
-                              border="1px solid black"
-                              sx={{
-                                cursor: "pointer",
-                                fontSize: { xs: "0.8rem", sm: "1rem" }, // Font size adjustment
-                                transition: "background-color 0.3s", // Smooth background transition
-                                "&:hover": {
-                                  backgroundColor: !bookingConfirmed
-                                    ? "lightyellow"
-                                    : "inherit", // Hover effect
-                                },
-                              }}
-                              onClick={() =>
-                                handleSeatClick(row[seatRow], "outbound")
-                              }
-                            >
-                              {row[seatRow]}
-                            </Box>
-                          ))}
+                                  seatNumber
+                                );
+                              const isDisabled =
+                                bookingConfirmed.outbound || isBooked;
+
+                              return (
+                                <Box
+                                  key={seatNumber}
+                                  bgcolor={
+                                    isBooked
+                                      ? "orange"
+                                      : isSelected
+                                      ? "lightgreen"
+                                      : "white"
+                                  }
+                                  textAlign="center"
+                                  width="50px"
+                                  border="1px solid black"
+                                  sx={{
+                                    cursor: isDisabled
+                                      ? "not-allowed"
+                                      : "pointer",
+                                    fontSize: { xs: "0.8rem", sm: "1rem" },
+                                    transition: "background-color 0.3s",
+                                  }}
+                                  onClick={() => {
+                                    if (!isDisabled) {
+                                      handleSeatClick(seatNumber, "outbound");
+                                    }
+                                  }}
+                                >
+                                  {seatNumber}
+                                </Box>
+                              );
+                            }
+                          )}
                         </Box>
                       ))}
                     </Box>
+
                     <Typography variant="h6" color="primary" mt={2}>
                       Total Fare: ${fare.outbound}
                     </Typography>
-                    {selectedSeats.outbound[bus.busName]?.length > 0 &&
-                      !bookingConfirmed.outbound && (
-                        <Box
-                          sx={{
-                            display: "flex",
-                            justifyContent: "center",
-                            mt: 2,
-                          }}
-                        >
-                          <Button
-                            variant="contained"
-                            color="primary"
-                            onClick={() => handleBookSeats("outbound")}
-                            sx={{ mt: 2 }}
-                          >
-                            Book Outbound
-                          </Button>
-                        </Box>
-                      )}
-                    {bookingConfirmed.outbound && (
-                      <Box
-                        sx={{
-                          display: "flex",
-                          justifyContent: "center",
-                          mt: 2,
-                        }}
-                      >
-                        <Button
-                          variant="contained"
-                          color="primary"
-                          onClick={() => downloadPDF("outbound")}
-                          sx={{ mt: 2 }}
-                        >
-                          Download Outbound PDF
-                        </Button>
-                      </Box>
-                    )}
                   </Box>
                 </AccordionDetails>
               </Accordion>
@@ -507,11 +566,11 @@ const RoundBus = () => {
                 <AccordionDetails>
                   <Box
                     sx={{
-                      border: "1px solid lightgray", // Set border color
-                      borderRadius: "4px", // Rounded corners
-                      padding: 2, // Padding inside the box
-                      mb: 2, // Margin bottom for spacing
-                      backgroundColor: "#f9f9f9", // Light background color
+                      border: "1px solid lightgray",
+                      borderRadius: "4px",
+                      padding: 2,
+                      mb: 2,
+                      backgroundColor: "#f9f9f9",
                     }}
                   >
                     <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
@@ -536,47 +595,63 @@ const RoundBus = () => {
                       {selectedSeats.return[bus.busName]?.join(", ") || "None"}
                     </Typography>
                     <Box display="flex" flexDirection="column" mt={2}>
-                      {[0, 1, 2, 3].map((seatRow) => (
+                      {["A", "B", "C", "D"].map((rowLetter, rowIndex) => (
                         <Box
-                          key={seatRow}
+                          key={rowLetter}
                           display="flex"
                           flexDirection="row"
                           justifyContent="space-around"
                           mb={1}
+                          mx={1}
                         >
-                          {bus.layout.seatConfiguration.map((row, rowIndex) => (
-                            <Box
-                              key={rowIndex}
-                              bgcolor={
+                          {bus.layout.seatConfiguration.map(
+                            (column, colIndex) => {
+                              const seatNumber = `${colIndex + 1}${rowLetter}`;
+
+                              const isBooked =
+                                bus.bookedSeats.includes(seatNumber);
+                              const isSelected =
                                 selectedSeats.return[bus.busName]?.includes(
-                                  row[seatRow]
-                                )
-                                  ? "lightgreen"
-                                  : "lightgray"
-                              }
-                              textAlign="center"
-                              width="50px"
-                              border="1px solid black"
-                              sx={{
-                                cursor: "pointer",
-                                fontSize: { xs: "0.8rem", sm: "1rem" }, // Font size adjustment
-                                transition: "background-color 0.3s", // Smooth background transition
-                                "&:hover": {
-                                  backgroundColor: !bookingConfirmed
-                                    ? "lightyellow"
-                                    : "inherit", // Hover effect
-                                },
-                              }}
-                              onClick={() =>
-                                handleSeatClick(row[seatRow], "return")
-                              }
-                            >
-                              {row[seatRow]}
-                            </Box>
-                          ))}
+                                  seatNumber
+                                );
+                              const isDisabled =
+                                bookingConfirmed.return || isBooked;
+
+                              return (
+                                <Box
+                                  key={seatNumber}
+                                  bgcolor={
+                                    isBooked
+                                      ? "orange"
+                                      : isSelected
+                                      ? "lightgreen"
+                                      : "white"
+                                  }
+                                  textAlign="center"
+                                  width="50px"
+                                  border="1px solid black"
+                                  sx={{
+                                    cursor: isDisabled
+                                      ? "not-allowed"
+                                      : "pointer",
+                                    fontSize: { xs: "0.8rem", sm: "1rem" },
+                                    transition: "background-color 0.3s",
+                                  }}
+                                  onClick={() => {
+                                    if (!isDisabled) {
+                                      handleSeatClick(seatNumber, "return");
+                                    }
+                                  }}
+                                >
+                                  {seatNumber}
+                                </Box>
+                              );
+                            }
+                          )}
                         </Box>
                       ))}
                     </Box>
+
                     <Typography variant="h6" color="primary" mt={2}>
                       Total Fare: ${fare.return}
                     </Typography>
@@ -592,9 +667,13 @@ const RoundBus = () => {
                           <Button
                             variant="contained"
                             color="primary"
-                            onClick={() => handleBookSeats("return")}
+                            onClick={() => handleBookSeats()}
+                            disabled={
+                              selectedSeats.outbound.length === 0 ||
+                              selectedSeats.return.length === 0
+                            }
                           >
-                            Book Return
+                            Book
                           </Button>
                         </Box>
                       )}
@@ -610,8 +689,8 @@ const RoundBus = () => {
                         <Button
                           variant="contained"
                           color="primary"
-                          onClick={() => downloadPDF("return")}
                           sx={{ mt: 2 }}
+                          onClick={downloadPDF}
                         >
                           Download Return PDF
                         </Button>
@@ -634,6 +713,16 @@ const RoundBus = () => {
           Booking confirmed successfully!
         </Alert>
       </Snackbar>
+      <Snackbar
+        open={loginAlert}
+        autoHideDuration={3000}
+        onClose={() => setLoginAlert(false)}
+        anchorOrigin={{ vertical: "top", horizontal: "right" }}
+      >
+        <Alert onClose={() => setLoginAlert(false)} severity="warning">
+          Please log in to book tickets.
+        </Alert>
+      </Snackbar>
       <Modal open={openConfirmModal} onClose={() => setOpenConfirmModal(false)}>
         <Box
           sx={{
@@ -644,12 +733,16 @@ const RoundBus = () => {
             bgcolor: "background.paper",
             boxShadow: 24,
             p: 4,
+            border: "2px solid black",
           }}
         >
           <Typography variant="h6">Confirm Booking</Typography>
 
           <Box mt={2}>
-            <Typography variant="h6"> Trip Details:</Typography>
+            <Typography variant="h6" sx={{ textDecoration: "underline" }}>
+              {" "}
+              Starting Trip
+            </Typography>
             {selectedBus.outbound && (
               <>
                 <Typography variant="body2">
@@ -665,18 +758,22 @@ const RoundBus = () => {
                 <Typography variant="body2">
                   End Time: {selectedBus.outbound.endTime}
                 </Typography>
-                <Typography variant="body2">
+                <Typography variant="body2" mt={2}>
                   Selected Seats (Outbound):{" "}
                   {selectedSeats.outbound[selectedBus.outbound?.busName]?.join(
                     ", "
                   ) || "None"}
                 </Typography>
-                <Typography variant="body2">
+                <Typography variant="body2" fontWeight="bold" mt={2}>
                   Total Fare (Outbound): ${fare.outbound}
                 </Typography>
               </>
             )}
 
+            <Typography variant="h6" sx={{ textDecoration: "underline" }}>
+              {" "}
+              Return Trip
+            </Typography>
             {selectedBus.return && (
               <>
                 <Typography variant="body2">
@@ -698,7 +795,7 @@ const RoundBus = () => {
                     ", "
                   ) || "None"}
                 </Typography>
-                <Typography variant="body2" mt={2}>
+                <Typography variant="body2" mt={2} fontWeight="bold">
                   Total Fare (Return): ${fare.return}
                 </Typography>
               </>

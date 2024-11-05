@@ -2,113 +2,169 @@ import React, { useState } from "react";
 import {
   Box,
   Button,
-  Stepper,
-  Step,
-  StepLabel,
-  Typography,
-  Grid,
   Checkbox,
   FormControlLabel,
+  Step,
+  StepLabel,
+  Stepper,
+  Typography,
+  Snackbar,
+  Alert,
 } from "@mui/material";
-
+import Grid from '@mui/material/Grid2'
+import { useAuth } from "../authContext";
 const additionalProducts = [
   { name: "Extra Baggage", price: 50 },
   { name: "Meal Plan", price: 30 },
   { name: "Priority Boarding", price: 20 },
 ];
-
 const TicketStepper = ({
   selectedFlight,
-  seatLayout, // Accept the dynamic seat layout
-  seatCategories, // Accept the dynamic seat categories
+  seatLayout,
+  seatCategories,
   selectedSeats,
   onTotalFare,
   setSelectedSeats,
+  bookedSeats = [],
 }) => {
+  const { user } = useAuth();
   const steps = ["Select Seat", "Select Additionals", "Review"];
   const [activeStep, setActiveStep] = useState(0);
   const [selectedSeatSelections, setSelectedSeatSelections] = useState({});
   const [additionalSelections, setAdditionalSelections] = useState({});
   const [totalFare, setTotalFare] = useState(0);
-  const [confirm, setConfirm] = useState(false)
-
-  // Function to handle seat selection
+  const [confirm, setConfirm] = useState(false);
+  const [snackbarOpen, setSnackbarOpen] = useState(false);
+  const [bookingConfirmed, setBookingConfirmed] = useState(false);
+  const [userLoginWarning, setUserLoginWarning] = useState(false);
   const handleSeatSelect = (seat) => {
-    const isSelected = Object.values(selectedSeatSelections)
-      .flat()
-      .includes(seat);
-    const rowIndex = parseInt(seat[0]) - 1; // Extract row number from seat label
-    const farePerSeat = seatCategories.find((category) =>
-      category.rows.includes(rowIndex)
-    ).price;
-
-    const newTotalFare = isSelected
-      ? totalFare - farePerSeat
-      : totalFare + farePerSeat;
-
+    const isSelected = Object.values(selectedSeatSelections).flat().includes(seat);
+    const rowMatch = seat.match(/^(\d+)/); 
+    const rowIndex = rowMatch ? parseInt(rowMatch[1], 10) : null;
+    const seatCategory = rowIndex !== null
+      ? seatCategories.find((category) => category.rows.includes(rowIndex))
+      : null;
+    if (!seatCategory) return;
+    const farePerSeat = seatCategory.price;
     setSelectedSeatSelections((prev) => {
       const updatedSeats = isSelected
         ? Object.entries(prev).reduce((acc, [key, seats]) => {
-            const filteredSeats = seats.filter((s) => s !== seat);
-            acc[key] = filteredSeats;
-            return acc;
+              const filteredSeats = seats.filter((s) => s !== seat);
+              if (filteredSeats.length > 0) {
+                  acc[key] = filteredSeats; // Keep non-empty arrays
+              }
+              return acc;
           }, {})
         : {
-            ...prev,
-            [farePerSeat]: [...(prev[farePerSeat] || []), seat],
+              ...prev,
+              [farePerSeat]: [...(prev[farePerSeat] || []), seat],
           };
+      const newTotalFare = Object.entries(updatedSeats).reduce(
+        (total, [price, seats]) => total + price * seats.length,
+        0
+      );
+      setTotalFare(newTotalFare);
+      onTotalFare(newTotalFare);
+      setSelectedSeats((prev) => ({
+        ...prev,
+        [selectedFlight._id]: Object.values(updatedSeats).flat(),
+      }));
       return updatedSeats;
     });
-
-    setTotalFare(newTotalFare);
-    onTotalFare(newTotalFare);
-    setSelectedSeats((prev) => ({
-      ...prev,
-      [selectedFlight.flightName]: Object.values(selectedSeatSelections).flat(),
-    }));
   };
-
   const handleAdditionalSelect = (product, price) => {
     setAdditionalSelections((prev) => {
       const isSelected = prev[product] !== undefined;
-      const newSelections = isSelected
-        ? { ...prev }
-        : { ...prev, [product]: price };
-      const newTotalFare = totalFare + (isSelected ? -price : price);
+      const newSelections = { ...prev };
+      if (isSelected) {
+        delete newSelections[product]; // Deselecting the product
+      } else {
+        newSelections[product] = price; // Selecting the product
+      }
+      // Calculate the new total fare
+      const newTotalFare =
+        Object.values(newSelections).reduce((total, itemPrice) => total + itemPrice, 0) +
+        Object.entries(selectedSeatSelections).reduce(
+          (total, [price, seats]) => total + price * seats.length,
+          0
+        );
       setTotalFare(newTotalFare);
       onTotalFare(newTotalFare);
-
-      if (isSelected) {
-        delete newSelections[product];
-      }
       return newSelections;
     });
   };
-
-  const handleNext = () => {
+  const handleConfirmBooking = async () => {
+    const payload = {
+      flightId: selectedFlight._id,
+      seats: Object.values(selectedSeatSelections).flat(),
+      totalFare,
+      additionalSelections,
+    };
     if (
-      activeStep === 0 &&
-      Object.values(selectedSeatSelections).flat().length === 0
+      !payload.flightId ||
+      payload.seats.length === 0 ||
+      payload.totalFare <= 0
     ) {
+      alert("Flight ID, seats, and total fare are required.");
+      return;
+    }
+    try {
+      const response = await fetch(
+        "http://localhost:5000/api/flight/bookings",
+        {
+          method: "POST", // Use POST for booking
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        }
+      );
+      if (response.ok) {
+        const data = await response.json();
+        console.log("Booking confirmed:", data);
+        setConfirm(true);
+        setBookingConfirmed(true); // Set booking confirmed state
+        setSnackbarOpen(true); // Open the snackbar
+      } else {
+        const errorData = await response.json();
+        alert(`Error: ${errorData.message}`);
+      }
+    } catch (error) {
+      console.error("Error during booking:", error);
+      alert(
+        "An error occurred while confirming your booking. Please try again."
+      );
+    }
+  };
+  const handleCloseSnackbar = () => {
+    setSnackbarOpen(false);
+  };
+  const handleNext = () => {
+    if (activeStep === 0 && Object.values(selectedSeatSelections).flat().length === 0) {
       alert("Please select at least one seat.");
       return;
     }
-    setActiveStep((prev) => prev + 1);
-    if(activeStep==2){
-      setConfirm(true)}
+    // Check if the user is logged in before confirming the booking
+    if (activeStep === steps.length - 1) {
+      if (!user) {
+        setUserLoginWarning(true); // Show warning if not logged in
+        return; // Prevent confirmation if user is not logged in
+      }
+      handleConfirmBooking(); // Proceed to confirm booking if user is logged in
+    } else {
+      setActiveStep((prev) => prev + 1);
+    }
   };
-
+  const handleCloseLoginWarning = () => {
+    setUserLoginWarning(false);
+  };
   const handleBack = () => {
     setActiveStep((prev) => prev - 1);
   };
-
   const getSeatBorderColor = (seat) => {
-    const seatLabel = typeof seat === "string" ? seat : seat.label; // Ensure seatLabel is a string
-    const rowIndex = parseInt(seatLabel.match(/\d+/)[0]) - 1; // Extract the full row number
-
+    const seatLabel = typeof seat === "string" ? seat : seat.label;
+    const rowIndex = parseInt(seatLabel.match(/\d+/)[0]) - 1;
     const category = seatCategories.find((cat) => cat.rows.includes(rowIndex));
-
-    // Use a different color for each category
     switch (category?.name) {
       case "Business":
         return "red";
@@ -117,20 +173,17 @@ const TicketStepper = ({
       case "Economy":
         return "blue";
       default:
-        return "gray"; // Default color for any unknown category
+        return "gray";
     }
   };
-
+  // Render seat layout
   const renderSeats = () => {
-    const columnCount = seatLayout.seatConfiguration[0].length; // Get the number of seats in a row
-
-    // Transpose the seat layout to group by columns
+    const columnCount = seatLayout.seatConfiguration[0].length;
     const transposedLayout = Array(columnCount)
       .fill()
       .map((_, colIndex) =>
         seatLayout.seatConfiguration.map((row) => row[colIndex])
       );
-
     return (
       <Grid container spacing={2}>
         <Box
@@ -144,175 +197,147 @@ const TicketStepper = ({
               key={columnIndex}
               display="flex"
               flexDirection="row"
-              justifyContent="space-between" // Adjusted to space-between for more room
-              mb={2} // Increased bottom margin for more spacing between rows
-              flexGrow={1} // Allow columns to grow and fill available space
+              justifyContent="space-between"
+              mb={2}
+              flexGrow={1}
             >
               {seatColumn.map((seat, rowIndex) => {
                 const isSelected = Object.values(selectedSeatSelections)
                   .flat()
                   .includes(seat);
-
+                const isBooked =
+                  Array.isArray(bookedSeats) && bookedSeats.includes(seat);
                 return (
                   <Box
                     key={rowIndex}
                     textAlign="center"
-                    width="60px" // Increased width for better visibility
-                    height="40px" // Set a fixed height for uniformity
-                    border={`1px solid ${getSeatBorderColor(seat)}`} // Use the seat border color
-                    bgcolor={isSelected ? "lightgreen" : "white"} // Change color if selected
-                    onClick={() => handleSeatSelect(seat)}
+                    width="60px"
+                    height="40px"
+                    border={`1px solid ${getSeatBorderColor(seat)}`}
+                    bgcolor={
+                      isSelected
+                        ? "lightgreen"
+                        : isBooked
+                        ? "lightgray"
+                        : "white"
+                    }
+                    onClick={() => !isBooked && handleSeatSelect(seat)}
                     display="flex"
-                    alignItems="center" // Center the seat number vertically
-                    justifyContent="center" // Center the seat number horizontally
-                    mx={1} // Horizontal margin for spacing between seats
-                    borderRadius={1} // Optional: Add some rounding to the corners
+                    alignItems="center"
+                    justifyContent="center"
+                    mx={1}
+                    borderRadius={1}
+                    sx={{
+                      cursor: isBooked ? "not-allowed" : "pointer",
+                      opacity: isBooked ? 0.5 : 1,
+                    }}
                   >
-                    {seat} {/* Seat number */}
+                    {seat}
                   </Box>
                 );
               })}
             </Box>
           ))}
-          <Box
-            sx={{
-              display: "flex",
-              flexDirection: "row",
-              justifyContent: "center",
-              alignItems: "center",
-              gap: 2,
-            }}
-          >
-            <Box
-              sx={{
-                height: "10px",
-                width: "10px",
-                borderRadius: "50%",
-                border: "2px solid red",
-                backgroundColor: "red",
-                mr: 1,
-              }}
-            />
-            <Typography variant="body1">Business Class</Typography>
-
-            <Box
-              sx={{
-                height: "10px",
-                width: "10px",
-                borderRadius: "50%",
-                border: "2px solid yellow",
-                backgroundColor: "yellow",
-                mr: 1,
-              }}
-            />
-            <Typography variant="body1">First Class</Typography>
-
-            <Box
-              sx={{
-                height: "10px",
-                width: "10px",
-                borderRadius: "50%",
-                border: "2px solid blue",
-                backgroundColor: "blue",
-                mr: 1,
-              }}
-            />
-            <Typography variant="body1">Economy</Typography>
-          </Box>
         </Box>
       </Grid>
     );
   };
-
   const renderAdditionals = () => {
     return (
       <Box>
         {additionalProducts.map((product) => (
-          <Box>
-          <FormControlLabel
-            key={product.name}
-            control={
-              <Checkbox
-                checked={additionalSelections[product.name] !== undefined}
-                onChange={() =>
-                  handleAdditionalSelect(product.name, product.price)
-                }
-              />
-            }
-            label={`${product.name} - $${product.price}`}
-          />
+          <Box key={product.name}>
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={additionalSelections[product.name] !== undefined}
+                  onChange={() =>
+                    handleAdditionalSelect(product.name, product.price)
+                  }
+                />
+              }
+              label={`${product.name} - $${product.price}`}
+            />
           </Box>
         ))}
       </Box>
     );
   };
-
   const renderReview = () => {
     const selectedSeats = Object.entries(selectedSeatSelections).flatMap(
-      ([category, seats]) => seats.map((seat) => `${seat} (${category})`)
+      ([category, seats]) => seats.map((seat) => ({ seat, category }))
     );
-
+    const additionalTotal = Object.values(additionalSelections).reduce(
+      (total, price) => total + price,
+      0
+    );
+    const total = totalFare + additionalTotal;
     return (
       <Box>
-        <Typography variant="h6">
-          Selected Flight: {selectedFlight.flightName}
-        </Typography>
-        <Typography variant="h6">
-          Selected Seats: {selectedSeats.join(", ")}
-        </Typography>
-        <Typography variant="h6">Additional Products:</Typography>
-        <ul>
-          {Object.keys(additionalSelections).map((key) => (
-            <li key={key}>
-              {key} - ${additionalSelections[key]}
-            </li>
-          ))}
-        </ul>
-        <Typography variant="h5">Total Fare: ${totalFare}</Typography>
+        <Typography variant="h6">Selected Seats:</Typography>
+        {selectedSeats.map(({ seat }) => (
+          <Typography key={seat}>{seat}</Typography>
+        ))}
+        <Typography variant="h6">Additionals:</Typography>
+        {Object.keys(additionalSelections).length > 0 ? (
+          Object.keys(additionalSelections).map((additional) => (
+            <Typography key={additional}>{additional}</Typography>
+          ))
+        ) : (
+          <Typography>No additional products selected.</Typography>
+        )}
+        <Typography variant="h6">Total Fare: ${total}</Typography>
       </Box>
     );
   };
-
   return (
     <Box>
-      <Stepper activeStep={activeStep}>
-        {steps.map((label) => (
-          <Step key={label}>
+      <Stepper activeStep={activeStep} alternativeLabel>
+        {steps.map((label, index) => (
+          <Step key={index}>
             <StepLabel>{label}</StepLabel>
           </Step>
         ))}
       </Stepper>
-
-      <Box mt={2}>
+      <Box mt={4}>
         {activeStep === 0 && renderSeats()}
-
-        {activeStep === 1 && (
-          <Box>
-            <Typography variant="h6">Select Additional Products:</Typography>
-            {renderAdditionals()}
-          </Box>
-        )}
-
+        {activeStep === 1 && renderAdditionals()}
         {activeStep === 2 && renderReview()}
-
-        <Box mt={2}>
-          <Button
-            disabled={activeStep === 0}
-            onClick={handleBack}
-            sx={{ mr: 1 }}
-          >
-            Back
-          </Button>
-          <Button variant="contained" onClick={handleNext}>
-            {activeStep === steps.length - 1 ? "Confirm Booking" : "Next"}
-          </Button>
-        </Box>
       </Box>
-      {confirm && <h1>iytxctygitxhfc</h1>}
+      <Box mt={4} display="flex" justifyContent="space-between">
+        <Button disabled={activeStep === 0} onClick={handleBack}>
+          Back
+        </Button>
+        <Button variant="contained" color="primary" onClick={handleNext}>
+          {activeStep === steps.length - 1 ? "Confirm" : "Next"}
+        </Button>
+      </Box>
+      <Snackbar
+        open={snackbarOpen}
+        autoHideDuration={6000}
+        onClose={handleCloseSnackbar}
+        anchorOrigin={{ vertical: "top", horizontal: "center" }}
+      >
+        <Alert
+          onClose={handleCloseSnackbar}
+          severity={bookingConfirmed ? "success" : "error"}
+        >
+          {bookingConfirmed
+            ? "Booking Confirmed!"
+            : "Booking could not be confirmed."}
+        </Alert>
+      </Snackbar>
+      <Snackbar
+        open={userLoginWarning}
+        autoHideDuration={6000}
+        onClose={handleCloseLoginWarning}
+        anchorOrigin={{ vertical: "top", horizontal: "right" }}
+      >
+        <Alert onClose={handleCloseLoginWarning} severity="warning">
+          Please log in to confirm your booking.
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };
-
 export default TicketStepper;
-
-

@@ -1,10 +1,14 @@
-import { createContext, useState, useEffect } from 'react';
-import {jwtDecode} from 'jwt-decode';
+
+
+
+import { createContext, useState, useEffect, useContext } from 'react';
+import {jwtDecode} from 'jwt-decode'; // Correct default import for jwtDecode
 
 const AuthContext = createContext();
 
 const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
+  const [message, setMessage] = useState('');
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -17,7 +21,7 @@ const AuthProvider = ({ children }) => {
       }
     }
   }, []);
-
+  
   const signup = async (name, email, password) => {
     try {
       const res = await fetch('http://localhost:5000/api/auth/signup', {
@@ -34,14 +38,15 @@ const AuthProvider = ({ children }) => {
         localStorage.setItem('token', data.token);
         setUser(data.user);
       } else {
-        console.error('Signup error:', data.message);
+        throw new Error(data.message);
       }
     } catch (error) {
-      console.error('Fetch error:', error);
+      throw new Error('Signup failed: ' + error.message);
     }
   };
-
+  
   const login = async (email, password) => {
+    console.log('Login attempt:', { email, password }); // Log input values
     try {
       const res = await fetch('http://localhost:5000/api/auth/login', {
         method: 'POST',
@@ -50,30 +55,67 @@ const AuthProvider = ({ children }) => {
         },
         body: JSON.stringify({ email, password }),
       });
-
+  
       const data = await res.json();
-
+      console.log('Login response:', { res, data }); // Log response data
+  
       if (res.ok) {
         localStorage.setItem('token', data.token);
-        setUser(data.user);
+        setUser(data.user); // Update user state
+        setMessage('Login successful! Welcome back!');
       } else {
-        console.error('Login error:', data.message);
+        if (data.message === 'User not found') {
+          throw new Error('User not found');
+        } else if (data.message === 'Invalid credentials') {
+          throw new Error('Invalid credentials');
+        } else {
+          throw new Error(data.message);
+        }
       }
     } catch (error) {
-      console.error('Fetch error:', error);
+      throw new Error('Login failed: ' + error.message);
     }
   };
 
+  const checkUserExists = async (email, mobile) => {
+    try {
+        const response = await fetch('http://localhost:5000/api/auth/check-user-exist', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ email, mobile }),
+        });
+
+        const data = await response.json();
+
+        return response.ok; // Return true if the user exists, false otherwise
+    } catch (error) {
+        console.error('Error checking user existence:', error);
+        return false; // In case of an error, assume user does not exist
+    }
+};
+
+  
   const logout = () => {
     localStorage.removeItem('token');
     setUser(null);
+    setMessage('');
+    alert('You have been logged out.');
   };
 
+  const clearMessage = () => setMessage(''); // Method to clear the message
+
   return (
-    <AuthContext.Provider value={{ user, signup, login, logout }}>
+    <AuthContext.Provider value={{ user, message, signup, login, logout, clearMessage, checkUserExists }}>
       {children}
     </AuthContext.Provider>
   );
 };
 
-export { AuthContext, AuthProvider };
+// Custom hook to use the AuthContext
+const useAuth = () => {
+  return useContext(AuthContext);
+};
+
+export { AuthContext, AuthProvider, useAuth };
