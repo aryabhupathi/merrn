@@ -337,6 +337,7 @@ router.get('/bookedSeats', async (req, res) => {
         res.status(500).json({ message: "Error fetching booked seats: " + error.message });
     }
 });
+
 router.post('/roundbookings', async (req, res) => {
     const { outboundFlightId, returnFlightId, outboundSeats, returnSeats, totalFare, additionalSelections } = req.body;
 

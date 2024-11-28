@@ -1,166 +1,312 @@
-// import React, { useState } from "react";
-// import {
-//   Box,
-//   Button,
-//   Snackbar,
-//   Typography,
-//   Alert,
-//   Modal,
-//   Accordion,
-//   AccordionSummary,
-//   AccordionDetails,
-//   Grid,
-// } from "@mui/material";
-// import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
-// import TicketStepper from "./TicketStepper"; // Adjust the import as necessary
-// import { useLocation } from "react-router-dom";
-// import { jsPDF } from "jspdf";
-// import { flight } from "../data"; // Adjust the import based on your data structure
-// const SingleFlight = () => {
-//   const location = useLocation();
-//   const { formData } = location.state;
-//   const [selectedSeats, setSelectedSeats] = useState({});
-//   const [openConfirmModal, setOpenConfirmModal] = useState(false);
-//   const [selectedFlight, setSelectedFlight] = useState(null);
-//   const [expanded, setExpanded] = useState(false);
-//   const [bookingConfirmed, setBookingConfirmed] = useState(false);
-//   const [showMessage, setShowMessage] = useState(false);
-//   const [startBooking, setStartBooking] = useState(false);
+// export default function RoundTicketStepper({
+//   seatLayout,
+//   seatCategories,
+//   bookedSeats = [],
+//   selectedFlight,
+//   onTotalFare,
+//   setSelectedSeats, // Prop from parent
+//   onFinish,
+// }) {
+//   const [activeStep, setActiveStep] = useState(0);
+//   const [localSelectedSeats, setLocalSelectedSeats] = useState([]); // Rename local state
+//   const [selectedMeals, setSelectedMeals] = useState([]);
+//   const [selectedBenefits, setSelectedBenefits] = useState([]);
+//   const [selectedSeatSelections, setSelectedSeatSelections] = useState({});
 //   const [totalFare, setTotalFare] = useState(0);
-//   const outboundTrips = flight.filter(
-//     (item) =>
-//       item.source === formData.source &&
-//       item.destination === formData.destination
-//   );
-//   const handleCloseSnackbar = () => setShowMessage(false);
-//   const handleFlightSelect = (flight) => {
-//     setSelectedFlight(flight);
-//     setSelectedSeats({ [flight.flightName]: [] });
-//     setBookingConfirmed(false);
-//     setStartBooking(false);
-//   };
-//   const handleStartBooking = () => setStartBooking(true);
-//   const handleBookSeats = () => setOpenConfirmModal(true);
-//   const handleTotalFareUpdate = (fare) => setTotalFare(fare);
-//   const confirmBooking = () => {
-//     setBookingConfirmed(true);
-//     setOpenConfirmModal(false);
-//     setTimeout(() => setShowMessage(true), 2000);
-//   };
-//   const downloadPDF = () => {
-//     const doc = new jsPDF();
-//     const pageWidth = doc.internal.pageSize.getWidth();
-//     const margin = 20;
-//     doc.setFontSize(22);
-//     doc.text("Reservation Details", margin, margin);
-//     doc.setFontSize(12);
-//     doc.text(`Date: ${new Date().toLocaleDateString()}`, pageWidth - 70, margin);
-//     const headerY = 40;
-//     const headers = ["Flight Name", "Route", "Start Time", "Seats", "Fare"];
-//     const columnWidths = [40, 40, 40, 30, 20];
-//     headers.forEach((header, index) => {
-//       doc.text(header, margin + columnWidths.slice(0, index).reduce((a, b) => a + b, 0), headerY);
+//   const [complete, setComplete] = useState(false);
+
+//   const handleSeatSelect = (seat) => {
+//     const isSelected = Object.values(selectedSeatSelections)
+//       .flat()
+//       .includes(seat);
+//     const rowMatch = seat.match(/^(\d+)/);
+//     const rowIndex = rowMatch ? parseInt(rowMatch[1], 10) : null;
+//     const seatCategory =
+//       rowIndex !== null
+//         ? seatCategories.find((category) => category.rows.includes(rowIndex))
+//         : null;
+//     if (!seatCategory) return;
+//     const farePerSeat = seatCategory.price;
+//     setSelectedSeatSelections((prev) => {
+//       const updatedSeats = isSelected
+//         ? Object.entries(prev).reduce((acc, [key, seats]) => {
+//             const filteredSeats = seats.filter((s) => s !== seat);
+//             if (filteredSeats.length > 0) {
+//               acc[key] = filteredSeats; // Keep non-empty arrays
+//             }
+//             return acc;
+//           }, {})
+//         : {
+//             ...prev,
+//             [farePerSeat]: [...(prev[farePerSeat] || []), seat],
+//           };
+//       const seatFare = Object.entries(updatedSeats).reduce(
+//         (total, [price, seats]) => total + price * seats.length,
+//         0
+//       );
+//       const totalFare = seatFare + calculateMealAndBenefitFare();
+//       setTotalFare(totalFare);
+//       onTotalFare(totalFare); // Pass to parent
+//       setSelectedSeats((prev) => ({
+//         ...prev,
+//         [selectedFlight._id]: Object.values(updatedSeats).flat(),
+//       }));
+//       return updatedSeats;
 //     });
-//     let y = headerY + 10;
-//     Object.keys(selectedSeats).forEach((flightName) => {
-//       const seats = selectedSeats[flightName];
-//       if (seats.length > 0) {
-//         const flightDetails = outboundTrips.find((f) => f.flightName === flightName);
-//         if (flightDetails) {
-//           const fare = flightDetails.categories[0].fare * seats.length;
-//           doc.text(flightName, margin, y);
-//           doc.text(`${flightDetails.source} to ${flightDetails.destination}`, margin + columnWidths[0], y);
-//           doc.text(flightDetails.startTime, margin + columnWidths[0] + columnWidths[1], y);
-//           doc.text(seats.join(", "), margin + columnWidths[0] + columnWidths[1] + columnWidths[2], y);
-//           doc.text(`$${fare}`, margin + columnWidths[0] + columnWidths[1] + columnWidths[2] + columnWidths[3], y);
-//           y += 10;
-//         }
-//       }
-//     });
-//     doc.setFontSize(10);
-//     doc.text("Thank you for your reservation!", margin, doc.internal.pageSize.getHeight() - margin);
-//     doc.save("reservation-details.pdf");
 //   };
-//   const handleChange = (flightIndex) => {
-//     setExpanded(expanded === flightIndex ? false : flightIndex);
-//     handleFlightSelect(outboundTrips[flightIndex]);
+//   const handleNext = () => {
+//     setActiveStep((prev) => prev + 1);
+//   };
+//   const handleBack = () => {
+//     setActiveStep((prev) => prev - 1);
+//   };
+//   const handleReset = () => {
+//     setActiveStep(0);
+//     setSelectedSeats([]);
+//     setSelectedMeals([]);
+//     setSelectedBenefits([]);
+//   };
+//   const getSeatBorderColor = (seat) => {
+//     const seatLabel = typeof seat === "string" ? seat : seat.label;
+//     const rowIndex = parseInt(seatLabel.match(/\d+/)[0]);
+//     const category = seatCategories.find((cat) => cat.rows.includes(rowIndex));
+//     switch (category?.name) {
+//       case "Business":
+//         return "red";
+//       case "First Class":
+//         return "yellow";
+//       case "Economy":
+//         return "blue";
+//       default:
+//         return "gray";
+//     }
+//   };
+//   const renderSeats = () => {
+//     const columnCount = seatLayout.seatConfiguration[0].length;
+//     const transposedLayout = Array(columnCount)
+//       .fill()
+//       .map((_, colIndex) =>
+//         seatLayout.seatConfiguration.map((row) => row[colIndex])
+//       );
+//     return (
+//       <Grid container spacing={2}>
+//         <Box
+//           display="flex"
+//           flexDirection="column"
+//           mt={2}
+//           sx={{ overflow: "scroll" }}
+//         >
+//           {transposedLayout.map((seatColumn, columnIndex) => (
+//             <Box
+//               key={columnIndex}
+//               display="flex"
+//               flexDirection="row"
+//               justifyContent="space-between"
+//               mb={2}
+//               flexGrow={1}
+//             >
+//               {seatColumn.map((seat, rowIndex) => {
+//                 const isSelected = Object.values(selectedSeatSelections)
+//                   .flat()
+//                   .includes(seat);
+                // const isBooked =
+                //   Array.isArray(bookedSeats) && bookedSeats.includes(seat);
+//                 return (
+//                   <Box
+//                     key={rowIndex}
+//                     textAlign="center"
+//                     width="60px"
+//                     height="40px"
+//                     display="flex"
+//                     alignItems="center"
+//                     justifyContent="center"
+//                     border={`1px solid ${getSeatBorderColor(seat)}`}
+//                     onClick={() => handleSeatSelect(seat)}
+//                     bgcolor={
+//                       isSelected
+//                         ? "lightgreen"
+//                         : isBooked
+//                         ? "lightgray"
+//                         : "white"
+//                     }
+//                     sx={{
+//                       cursor: isBooked ? "not-allowed" : "pointer",
+//                       opacity: isBooked ? 0.5 : 1,
+//                     }}
+//                     mx={1}
+//                     borderRadius={1}
+//                   >
+//                     {seat}
+//                   </Box>
+//                 );
+//               })}
+//             </Box>
+//           ))}
+//         </Box>
+//       </Grid>
+//     );
+//   };
+//   const renderMeals = () => {
+//     return (
+//       <Box>
+//         {Meals.map((product) => (
+//           <Box key={product.name}>
+//             <FormControlLabel
+//               control={
+//                 <Checkbox
+//                   checked={selectedMeals[product.name]}
+//                   onChange={() => handleMealSelect(product.name, product.price)}
+//                 />
+//               }
+//               label={`${product.name} - $${product.price}`}
+//             />
+//           </Box>
+//         ))}
+//       </Box>
+//     );
+//   };
+//   const renderBenefits = () => {
+//     return (
+//       <Box>
+//         {Benefits.map((product) => (
+//           <Box key={product.name}>
+//             <FormControlLabel
+//               control={
+//                 <Checkbox
+//                   checked={selectedBenefits[product.name]}
+//                   onChange={() =>
+//                     handleBenefitSelect(product.name, product.price)
+//                   }
+//                 />
+//               }
+//               label={`${product.name} - $${product.price}`}
+//             />
+//           </Box>
+//         ))}
+//       </Box>
+//     );
+//   };
+//   const handleMealSelect = (product) => {
+//     setSelectedMeals((prev) => {
+//       const updatedMeals = prev.includes(product)
+//         ? prev.filter((item) => item !== product) // Remove if selected
+//         : [...prev, product]; // Add if not selected
+//       const totalFare = calculateMealAndBenefitFare() + calculateSeatFare();
+//       setTotalFare(totalFare);
+//       onTotalFare(totalFare); // Pass to parent
+//       return updatedMeals;
+//     });
+//   };
+//   const handleBenefitSelect = (product) => {
+//     setSelectedBenefits((prev) => {
+//       const updatedBenefits = prev.includes(product)
+//         ? prev.filter((item) => item !== product) // Remove if selected
+//         : [...prev, product]; // Add if not selected
+//       const totalFare = calculateMealAndBenefitFare() + calculateSeatFare();
+//       setTotalFare(totalFare);
+//       onTotalFare(totalFare); // Pass to parent
+//       return updatedBenefits;
+//     });
+//   };
+//   const calculateMealAndBenefitFare = () => {
+//     const mealsFare = selectedMeals.reduce((total, mealName) => {
+//       const meal = Meals.find((m) => m.name === mealName);
+//       return total + (meal ? meal.price : 0);
+//     }, 0);
+//     const benefitsFare = selectedBenefits.reduce((total, benefitName) => {
+//       const benefit = Benefits.find((b) => b.name === benefitName);
+//       return total + (benefit ? benefit.price : 0);
+//     }, 0);
+//     return mealsFare + benefitsFare;
+//   };
+//   const calculateSeatFare = () => {
+//     return Object.entries(selectedSeatSelections).reduce(
+//       (total, [price, seats]) => total + price * seats.length,
+//       0
+//     );
+//   };
+//   const renderStepContent = (step) => {
+//     switch (step) {
+//       case 0:
+//         return (
+//           <Box>
+//             <Typography>Select your seats</Typography>
+//             {renderSeats()}
+//           </Box>
+//         );
+//       case 1:
+//         return (
+//           <Box>
+//             <Typography>Select your meals</Typography>
+//             {renderMeals()}
+//           </Box>
+//         );
+//       case 2:
+//         return (
+//           <Box>
+//             <Typography>Select additional services</Typography>
+//             {renderBenefits()}
+//           </Box>
+//         );
+//       case 3:
+//         const allSelectedSeats = Object.values(localSelectedSeats).flat();
+//         return (
+//           <Box>
+//             <Typography>Review Your Selections:</Typography>
+//             <Typography>Seats: {allSelectedSeats.join(", ")}</Typography>
+//             <Typography>Meals: {selectedMeals.join(", ")}</Typography>
+//             <Typography>Additionals: {selectedBenefits.join(", ")}</Typography>
+//             {totalFare}
+//           </Box>
+//         );
+//       default:
+//         return "Unknown step";
+//     }
 //   };
 //   return (
-//     <Box sx={{ padding: 2, backgroundImage: "url(../../flight.webp)", backgroundSize: "cover", backgroundPosition: "center", minHeight: "100vh" }}>
-//       <Typography variant="h5" sx={{ WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", textAlign: "center" }}>
-//         Available Flights from {formData.source} to {formData.destination}
-//       </Typography>
-//       <Grid xs={12} sm={9} sx={{ padding: 2 }}>
-//         {outboundTrips.length > 0 ? (
-//           outboundTrips.map((details, index) => (
-//             <Accordion key={index} expanded={expanded === index} onChange={() => handleChange(index)} sx={{ mb: 2 }}>
-//               <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-//                 <Typography variant="h6" sx={{ color: "blue", fontWeight: "bold" }}>
-//                   {details.flightName} &#x2794;
-//                 </Typography>
-//                 <Typography variant="body1" sx={{ color: "green", ml: 2 }}>
-//                   Route: {details.source} to {details.destination} &#x2794;
-//                 </Typography>
-//                 <Typography variant="body1" sx={{ color: "orange", ml: 2 }}>
-//                   Fare per seat: ${details.baseFare}
-//                 </Typography>
-//               </AccordionSummary>
-//               <AccordionDetails>
-//                 <Box sx={{ border: "1px solid lightgray", borderRadius: "4px", padding: 2, mb: 2, backgroundColor: "#f9f9f9" }}>
-//                   <Typography variant="body2" sx={{ color: "blue" }}>
-//                     Start Time: {details.startTime} | End Time: {details.endTime}
-//                   </Typography>
-//                   <Typography variant="body2" sx={{ color: "green", mt: 1 }}>
-//                     Stops: {details.stops.join(", ")}
-//                   </Typography>
-//                   <Typography variant="body2" sx={{ color: "green", mt: 1 }}>
-//                     Base Price: ${details.baseFare}
-//                   </Typography>
-//                   <Button onClick={handleStartBooking}>Proceed</Button>
-//                   {startBooking && !bookingConfirmed && (
-//                     <TicketStepper
-//                       selectedFlight={selectedFlight}
-//                       seatLayout={selectedFlight?.layout}
-//                       seatCategories={selectedFlight?.seatCategories}
-//                       selectedSeats={selectedSeats}
-//                       onTotalFare={handleTotalFareUpdate}
-//                       setSelectedSeats={setSelectedSeats}
-//                     />
-//                   )}
-//                 </Box>
-//                 <Box sx={{ display: "flex", justifyContent: "center" }}>
-//                   {selectedSeats[details.flightName]?.length > 0 && !bookingConfirmed && (
-//                     <Button variant="contained" color="primary" onClick={handleBookSeats} sx={{ mt: 2 }}>
-//                       Book
-//                     </Button>
-//                   )}
-//                   {bookingConfirmed && (
-//                     <Button variant="contained" color="success" onClick={downloadPDF} sx={{ mt: 2 }}>
-//                       Download Ticket
-//                     </Button>
-//                   )}
-//                 </Box>
-//               </AccordionDetails>
-//             </Accordion>
-//           ))
+//     <Stack sx={{ width: "100%" }} spacing={4}>
+//       <Stepper
+//         alternativeLabel
+//         activeStep={activeStep}
+//         connector={<ColorlibConnector />}
+//       >
+//         {steps.map((label) => (
+//           <Step key={label}>
+//             <StepLabel StepIconComponent={ColorlibStepIcon}>{label}</StepLabel>
+//           </Step>
+//         ))}
+//       </Stepper>
+//       <Box sx={{ p: 3 }}>
+//         {activeStep === steps.length ? (
+//           <Box>
+//             <Button onClick={handleReset}>Reset</Button>
+//           </Box>
 //         ) : (
-//           <Alert severity="error">No flights found!</Alert>
+//           <Box>
+//             {renderStepContent(activeStep)}
+//             <Box sx={{ mt: 2 }}>
+//               <Button
+//                 disabled={activeStep === 0}
+//                 onClick={handleBack}
+//                 sx={{ mr: 1 }}
+//               >
+//                 Back
+//               </Button>
+//               <Button
+//   variant="contained"
+//   onClick={() => {
+//     handleNext(); // Handle the next step
+//     if (activeStep === steps.length - 1) {
+//       onFinish(); // Notify the parent that the process is finished
+//     }
+//   }}
+// >
+//   {activeStep === steps.length - 1 ? "Finish" : "Next"}
+// </Button>
+//             </Box>
+//           </Box>
 //         )}
-//       </Grid>
-//       <Modal open={openConfirmModal} onClose={() => setOpenConfirmModal(false)}>
-//         <Box sx={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: 400, bgcolor: "background.paper", p: 4, textAlign: "center" }}>
-//           <Typography variant="h6">Confirm Booking?</Typography>
-//           <Button variant="contained" color="primary" onClick={confirmBooking} sx={{ mt: 2 }}>
-//             Confirm
-//           </Button>
-//         </Box>
-//       </Modal>
-//       <Snackbar open={showMessage} autoHideDuration={6000} onClose={handleCloseSnackbar}>
-//         <Alert onClose={handleCloseSnackbar} severity="success">
-//           Booking Confirmed!
-//         </Alert>
-//       </Snackbar>
-//     </Box>
+//       </Box>
+//     </Stack>
 //   );
-// };
-// export default SingleFlight;
+// }
